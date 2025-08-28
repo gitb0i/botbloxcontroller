@@ -52,6 +52,7 @@ local function processMessage(player, content)
 	if isExcepted then
 		return
 	end
+	warn(player,content)
 	if not content or content:sub(1,1) ~= "_" then return end
 
 	local args = string.split(content, " ")
@@ -100,83 +101,105 @@ local function findPlayerFromChatName(speakerStr)
 end
 
 -- Unified chat hookup (supports new TextChatService and legacy DefaultChatSystemChatEvents)
-do
-	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-	pcall(function()
-		TextChatService.MessageReceived:Connect(function(message)
-			-- new system gives reliable UserId + text
-			local plr = Players:GetPlayerByUserId(message.TextSource and message.TextSource.UserId)
-			if plr then
-				processMessage(plr, tostring(message.Text or ""))
+local DSH = false
+local function ONM(a,b)
+	print(a,b)
+	-- a and b might be: (messageData, channelName) OR (speakerName, message) OR (messageData)
+	local messageData
+	local channelName
+
+	if type(a) == "table" and a.Message ~= nil then
+		-- (messageData, channelName) or just (messageData)
+		messageData = a
+		channelName = b
+	elseif type(a) == "string" and type(b) == "string" then
+		-- some servers call (speakerName, message)
+		messageData = { FromSpeaker = a, Message = b }
+	elseif type(a) == "string" and type(b) == "table" then
+		-- some servers call (speakerName, messageDataTable)
+		-- prefer the table if it has a Message field
+		messageData = b
+	else
+		-- fallback: try treating 'a' as messageData
+		messageData = a
+	end
+
+	-- extract text and speaker from whatever shape we have
+	local content = messageData and (messageData.Message or messageData.message or tostring(messageData))
+	local speaker = messageData and (messageData.FromSpeaker or messageData.Speaker or messageData.Sender or messageData.SpeakerName or messageData.From)
+
+	-- try to resolve player
+	local plr = findPlayerFromChatName(speaker)
+
+	-- fallback: if messageData has a userId field, try that
+	if not plr and messageData and messageData.UserId then
+		plr = Players:GetPlayerByUserId(tonumber(messageData.UserId))
+	end
+
+	-- If we still couldn't find a player, try to find by a Name that appears in messageData.FromSpeaker (looser)
+	-- (optional: remove/comment this if you don't want fuzzy matching)
+	if not plr and type(speaker) == "string" then
+		for _,p in ipairs(Players:GetPlayers()) do
+			if speaker:lower():find(p.Name:lower(), 1, true) or speaker:lower():find(p.DisplayName:lower(), 1, true) then
+				plr = p
+				break
 			end
-		end) end)
-	--else
-	pcall(function()
-		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-		if chatEvents then
-			local onNewMessage = chatEvents:WaitForChild("OnNewMessage")
-			onNewMessage.OnClientEvent:Connect(function(a,b)
-				-- a and b might be: (messageData, channelName) OR (speakerName, message) OR (messageData)
-				local messageData
-				local channelName
+		end
+	end
 
-				if type(a) == "table" and a.Message ~= nil then
-					-- (messageData, channelName) or just (messageData)
-					messageData = a
-					channelName = b
-				elseif type(a) == "string" and type(b) == "string" then
-					-- some servers call (speakerName, message)
-					messageData = { FromSpeaker = a, Message = b }
-				elseif type(a) == "string" and type(b) == "table" then
-					-- some servers call (speakerName, messageDataTable)
-					-- prefer the table if it has a Message field
-					messageData = b
-				else
-					-- fallback: try treating 'a' as messageData
-					messageData = a
-				end
-
-				-- extract text and speaker from whatever shape we have
-				local content = messageData and (messageData.Message or messageData.message or tostring(messageData))
-				local speaker = messageData and (messageData.FromSpeaker or messageData.Speaker or messageData.Sender or messageData.SpeakerName or messageData.From)
-
-				-- try to resolve player
-				local plr = findPlayerFromChatName(speaker)
-
-				-- fallback: if messageData has a userId field, try that
-				if not plr and messageData and messageData.UserId then
-					plr = Players:GetPlayerByUserId(tonumber(messageData.UserId))
-				end
-
-				-- If we still couldn't find a player, try to find by a Name that appears in messageData.FromSpeaker (looser)
-				-- (optional: remove/comment this if you don't want fuzzy matching)
-				if not plr and type(speaker) == "string" then
-					for _,p in ipairs(Players:GetPlayers()) do
-						if speaker:lower():find(p.Name:lower(), 1, true) or speaker:lower():find(p.DisplayName:lower(), 1, true) then
-							plr = p
-							break
-						end
-					end
-				end
-
-				-- only process if we resolved a player and the content exists
-				if plr and content and type(content) == "string" then
-					processMessage(plr, content)
+	-- only process if we resolved a player and the content exists
+	print(plr,content)
+	if plr and content then
+		processMessage(plr, content)
 				--[[ optional debug if nothing matched:
 				else
 					warn("Legacy chat: couldn't resolve message/speaker", speaker, content)
 				end
 				--]]
-				end
-			end)
-
-			--else
-			--warn("Legacy chat events not found in ReplicatedStorage.")
-			--end
-		end 
-	end)
+	end
 
 end
+
+--else
+--warn("Legacy chat events not found in ReplicatedStorage.")
+--end
+
+
+
+local function hookDefaultSystem()
+
+	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if chatEvents then
+		local onNewMessage = chatEvents:WaitForChild("OnNewMessage")
+		local onNewMessage2 = chatEvents:WaitForChild("OnMessageDoneFiltering")
+		DSH = true
+		print("HOOKE DDEFAULT")
+		onNewMessage.OnClientEvent:Connect(ONM)
+		onNewMessage2.OnClientEvent:Connect(ONM)
+	end
+end
+
+--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+pcall(function()
+	TextChatService.MessageReceived:Connect(function(message)
+		-- new system gives reliable UserId + text
+		local plr = Players:GetPlayerByUserId(message.TextSource and message.TextSource.UserId)
+		if plr then
+			processMessage(plr, tostring(message.Text or ""))
+		end
+	end) 
+end)
+--else
+local s,e = pcall(hookDefaultSystem)
+
+warn(s,e)
+ReplicatedStorage.ChildAdded:Connect(function()
+	if not DSH then
+		pcall(hookDefaultSystem)
+	end
+end)
+
+
 
 
 -- Target resolver
@@ -506,7 +529,7 @@ cmds['clear_ram'] = function(args,player)
 		if not whitelist[v] then
 			pcall(function()
 				v:Destroy()
-				end)
+			end)
 		end
 	end
 	me.Character.HumanoidRootPart.Anchored = true
@@ -1030,12 +1053,12 @@ cmds["followpath"] = function(args, player)
 end
 
 cmds['except'] = function(args, player)
-	
+
 	local target = getTargetFromArgs(args,player)
 	if target.Name == me.Name then
 		isExcepted = true
 	end
-	
+
 end
 
 ----------------------------------------------------------------
