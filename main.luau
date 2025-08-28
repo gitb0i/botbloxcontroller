@@ -954,7 +954,7 @@ cmds["follow"] = function(args, player)
 
 		local distance = tonumber(args[4]) or -3
 		local followPos = targetHRP.CFrame + targetHRP.CFrame.LookVector * distance
-		targetHRP.CFrame = followPos
+		hrp.CFrame = followPos
 	end)
 end
 
