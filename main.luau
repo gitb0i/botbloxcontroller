@@ -73,17 +73,21 @@ end
 -- Handle chat messages (new + legacy systems)
 do
 	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+		print("New")
 		TextChatService.MessageReceived:Connect(function(message)
 			local plr = Players:GetPlayerByUserId(message.TextSource.UserId)
 			processMessage(plr, message.Text)
+			
 		end)
 	else
 		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 		if chatEvents then
+			print("Old")
 			local onNewMessage = chatEvents:WaitForChild("OnNewMessage")
 			onNewMessage.OnClientEvent:Connect(function(messageData)
 				local plr = Players:FindFirstChild(messageData.FromSpeaker)
 				processMessage(plr, messageData.Message)
+				
 			end)
 		else
 			warn("Legacy chat events not found in ReplicatedStorage.")
