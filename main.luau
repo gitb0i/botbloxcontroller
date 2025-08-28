@@ -101,15 +101,17 @@ end
 
 -- Unified chat hookup (supports new TextChatService and legacy DefaultChatSystemChatEvents)
 do
-	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+	pcall(function()
 		TextChatService.MessageReceived:Connect(function(message)
 			-- new system gives reliable UserId + text
 			local plr = Players:GetPlayerByUserId(message.TextSource and message.TextSource.UserId)
 			if plr then
 				processMessage(plr, tostring(message.Text or ""))
 			end
-		end)
-	else
+		end) end)
+	--else
+	pcall(function()
 		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 		if chatEvents then
 			local onNewMessage = chatEvents:WaitForChild("OnNewMessage")
@@ -167,10 +169,13 @@ do
 				--]]
 				end
 			end)
-		else
-			warn("Legacy chat events not found in ReplicatedStorage.")
-		end
-	end
+
+			--else
+			--warn("Legacy chat events not found in ReplicatedStorage.")
+			--end
+		end 
+	end)
+
 end
 
 
