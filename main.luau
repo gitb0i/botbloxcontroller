@@ -72,6 +72,7 @@ end
 
 -- Handle chat messages (new + legacy systems)
 do
+	print("Checking chat systems")
 	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		print("New")
 		TextChatService.MessageReceived:Connect(function(message)
