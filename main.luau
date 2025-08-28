@@ -401,6 +401,7 @@ cmds["disappear"] = function(args, player)
 	local hrp = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then
 		hrp.CFrame = CFrame.new(1e5, 1e5, 1e5)
+		task.wait(.2)
 		hrp.Anchored = true
 	end
 end
@@ -409,7 +410,8 @@ cmds["sink"] = function(args, player)
 	local depth = tonumber(args[2]) or 50
 	local hrp = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
-	hrp.Anchored = true
+	hrp.Parent.Head.Anchored = true
+	
 
 	local startY = hrp.Position.Y
 	task.spawn(function()
@@ -682,14 +684,14 @@ cmds["loopplayback"] = function(args, player)
 
 		local startTime = tick()
 		local currentIndex = 1
-		myHRP.Anchored = true  -- Anchor to prevent physics interference
+		--myHRP.Anchored = true  -- Anchor to prevent physics interference
 
 		-- Create a new connection for this playback iteration
 		local iterationConnection = nil
 		iterationConnection = RunService.Heartbeat:Connect(function()
 			if not isLooping then
 				iterationConnection:Disconnect()
-				myHRP.Anchored = false
+				--myHRP.Anchored = false
 				return
 			end
 
@@ -703,7 +705,7 @@ cmds["loopplayback"] = function(args, player)
 			if currentIndex > #recordedMovements then
 				-- Finished this iteration, restart
 				iterationConnection:Disconnect()
-				myHRP.Anchored = false
+				--myHRP.Anchored = false
 				playBackIteration()  -- Start next iteration
 				return
 			end
@@ -749,7 +751,7 @@ cmds["unloopplayback"] = function(args, player)
 	-- Unanchor the character
 	local myHRP = getPlayerHRP(me)
 	if myHRP then
-		myHRP.Anchored = false
+		--myHRP.Anchored = false
 	end
 end
 
@@ -819,7 +821,7 @@ cmds["playback"] = function(args, player)
 	-- Once at the starting position, play back the recorded movements
 	local startTime = tick()
 	local currentIndex = 1
-	myHRP.Anchored = true  -- Anchor to prevent physics interference
+	--myHRP.Anchored = true  -- Anchor to prevent physics interference
 
 	playbackConnection = RunService.Heartbeat:Connect(function()
 		local currentTime = tick() - startTime
@@ -833,7 +835,7 @@ cmds["playback"] = function(args, player)
 			-- Finished playback
 			playbackConnection:Disconnect()
 			playbackConnection = nil
-			myHRP.Anchored = false
+			--myHRP.Anchored = false
 			return
 		end
 
@@ -865,7 +867,7 @@ cmds["unplayback"] = function(args, player)
 
 	local myHRP = getPlayerHRP(me)
 	if myHRP then
-		myHRP.Anchored = false
+		--myHRP.Anchored = false
 	end
 end
 
@@ -890,7 +892,7 @@ end
 cmds["unsink"] = function(args, player)
 	local hrp = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then
-		hrp.Anchored = false
+		hrp.Parent.Head.Anchored = false
 	end
 end
 
