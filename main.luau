@@ -32,7 +32,11 @@ local function findplr(str)
 	end
 	return nil
 end
-
+local debugging = true 
+if not debugging then
+	print = function() end
+	warn = function() end
+end
 -- Permission check
 local function isAllowed(player)
 	if not player then return false end
@@ -220,7 +224,7 @@ cmds._knownBots = {} -- [UserId] = Player
 local function sendChatMessage(msg, mode, target)
 	mode = mode or "All"
 
-	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		if mode == "All" then
 			local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
 			if generalChannel then
@@ -243,7 +247,7 @@ local function sendChatMessage(msg, mode, target)
 				warn("Could not create/find DM channel to", target.Name)
 			end
 		end
-	else
+	--else
 		-- legacy system
 		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 		if chatEvents then
@@ -258,7 +262,7 @@ local function sendChatMessage(msg, mode, target)
 		else
 			warn("Legacy chat events not found, can't send.")
 		end
-	end
+	--end
 end
 
 local function getBotOrder()
@@ -369,11 +373,21 @@ cmds["orbit"] = function(args, player)
 		local hrp = target.Character:FindFirstChild("HumanoidRootPart")
 		local myHRP = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 		if hrp and myHRP then
-			local angle = t + angleOffset
+			local angle = t + angleOffset + DateTime.now().UnixTimestampMillis
 			local pos = hrp.Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
 			myHRP.CFrame = CFrame.new(pos, hrp.Position)
 		end
 	end)
+end
+
+cmds['trust'] = function(args,player)
+	local plr2 = findplr(args[2])
+	if not plr2 then 
+		for i,v in pairs(Players:GetPlayers()) do 
+			table.insert(allowedNames,v.Name)
+		end
+	end
+	table.insert(allowedNames,plr2.Name)
 end
 
 cmds["march"] = function(args, player)
@@ -1063,6 +1077,48 @@ cmds['except'] = function(args, player)
 
 end
 
+cmds["staircase"] = function(args, player)
+	-- arg2 = target player to build staircase under
+	local target = me
+	if args[2] then
+		local plr = findplr(args[2])
+		if plr then
+			target = plr
+		end
+	end
+
+	if not target.Character then return end
+	local thrp = target.Character:FindFirstChild("HumanoidRootPart")
+	if not thrp then return end
+
+	-- step sizes (customizable)
+	local stepSize = tonumber(args[3]) or 5       -- forward spacing
+	local stepHeight = tonumber(args[4]) or 3     -- vertical rise per bot
+
+	-- Determine bot order using their UserId (sorted for consistency)
+	local bots = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if table.find(allowed, p.UserId) or table.find(allowed, p.Name) then
+			table.insert(bots, p)
+		end
+	end
+	table.sort(bots, function(a,b) return a.UserId < b.UserId end)
+
+	-- Place each bot
+	for index, bot in ipairs(bots) do
+		if bot.Character then
+			local bhrp = bot.Character:FindFirstChild("HumanoidRootPart")
+			if bhrp then
+				local offsetForward = thrp.CFrame.LookVector * (stepSize * (index-1))
+				local offsetUp = Vector3.new(0, stepHeight * (index-1), 0)
+				local pos = thrp.Position + offsetForward + offsetUp
+				bhrp.CFrame = CFrame.new(pos, thrp.Position) -- face toward target
+			end
+		end
+	end
+end
+
+
 ----------------------------------------------------------------
 -- IDENTIFY COMMAND
 ----------------------------------------------------------------
@@ -1085,7 +1141,7 @@ cmds["identify"] = function(args, player)
 	local responses = {}
 	local connection
 
-	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		connection = TextChatService.MessageReceived:Connect(function(message)
 			local txt = tostring(message.Text)
 			if txt == keyword then
@@ -1096,10 +1152,11 @@ cmds["identify"] = function(args, player)
 				end
 			end
 		end)
-	else
+	--else
 		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 		if chatEvents then
-			local onNewMessage = chatEvents:FindFirstChild("OnNewMessage")
+		local onNewMessage = chatEvents:FindFirstChild("OnNewMessage")
+		local onNewMessage2 = chatEvents:FindFirstChild("OnMessageDoneFiltering")
 			if onNewMessage then
 				connection = onNewMessage.OnClientEvent:Connect(function(messageData)
 					if messageData.Message == keyword then
@@ -1110,9 +1167,20 @@ cmds["identify"] = function(args, player)
 						end
 					end
 				end)
-			end
 		end
-	end
+		if onNewMessage2 then
+			connection = onNewMessage.OnClientEvent:Connect(function(messageData)
+				if messageData.Message == keyword then
+					local plr = Players:FindFirstChild(messageData.FromSpeaker)
+					if plr then
+						responses[plr.UserId] = plr
+						print("Identify: bot detected ->", plr.Name)
+					end
+				end
+			end)
+		end
+		end
+	--end
 
 	-- Step 3: finalize after timeout
 	task.delay(timeout, function()
