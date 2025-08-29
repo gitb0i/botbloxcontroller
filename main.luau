@@ -225,43 +225,43 @@ local function sendChatMessage(msg, mode, target)
 	mode = mode or "All"
 
 	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-		if mode == "All" then
-			local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
-			if generalChannel then
-				generalChannel:SendAsync(msg)
-			else
-				warn("No RBXGeneral channel found to send message.")
-			end
-		elseif mode == "Private" and target then
-			local channelName = "DM_" .. target.UserId
-			local channel = TextChatService.TextChannels:FindFirstChild(channelName)
-
-			if not channel then
-				-- Create DM channel if not already present
-				channel = TextChatService:WaitForChild("TextChannel"):CreateDirectMessageChannelAsync(target.UserId)
-			end
-
-			if channel then
-				channel:SendAsync(msg)
-			else
-				warn("Could not create/find DM channel to", target.Name)
-			end
-		end
-	--else
-		-- legacy system
-		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-		if chatEvents then
-			local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
-			if sayMsg then
-				if mode == "All" then
-					sayMsg:FireServer(msg, "All")
-				elseif mode == "Private" and target then
-					sayMsg:FireServer(msg, "ToPlayer", target.Name)
-				end
-			end
+	if mode == "All" then
+		local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+		if generalChannel then
+			generalChannel:SendAsync(msg)
 		else
-			warn("Legacy chat events not found, can't send.")
+			warn("No RBXGeneral channel found to send message.")
 		end
+	elseif mode == "Private" and target then
+		local channelName = "DM_" .. target.UserId
+		local channel = TextChatService.TextChannels:FindFirstChild(channelName)
+
+		if not channel then
+			-- Create DM channel if not already present
+			channel = TextChatService:WaitForChild("TextChannel"):CreateDirectMessageChannelAsync(target.UserId)
+		end
+
+		if channel then
+			channel:SendAsync(msg)
+		else
+			warn("Could not create/find DM channel to", target.Name)
+		end
+	end
+	--else
+	-- legacy system
+	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if chatEvents then
+		local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
+		if sayMsg then
+			if mode == "All" then
+				sayMsg:FireServer(msg, "All")
+			elseif mode == "Private" and target then
+				sayMsg:FireServer(msg, "ToPlayer", target.Name)
+			end
+		end
+	else
+		warn("Legacy chat events not found, can't send.")
+	end
 	--end
 end
 
@@ -373,7 +373,7 @@ cmds["orbit"] = function(args, player)
 		local hrp = target.Character:FindFirstChild("HumanoidRootPart")
 		local myHRP = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 		if hrp and myHRP then
-			local angle = t + angleOffset + DateTime.now().UnixTimestampMillis
+			local angle = t + angleOffset + DateTime.now().UnixTimestampMillis/1000
 			local pos = hrp.Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
 			myHRP.CFrame = CFrame.new(pos, hrp.Position)
 		end
@@ -425,7 +425,7 @@ cmds["sink"] = function(args, player)
 	local hrp = me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 	hrp.Parent.Head.Anchored = true
-	
+
 
 	local startY = hrp.Position.Y
 	task.spawn(function()
@@ -1072,14 +1072,23 @@ cmds['except'] = function(args, player)
 
 	local target = getTargetFromArgs(args,player)
 	if target.Name == me.Name then
-		isExcepted = true
+		isExcepted = not isExcepted
+	end
+
+end
+
+cmds['exclude'] = function(args, player)
+
+	local target = getTargetFromArgs(args,player)
+	if target.Name == me.Name then
+		isExcepted = not isExcepted
 	end
 
 end
 
 cmds["staircase"] = function(args, player)
 	-- arg2 = target player to build staircase under
-	local target = me
+	local target = player
 	if args[2] then
 		local plr = findplr(args[2])
 		if plr then
@@ -1091,33 +1100,235 @@ cmds["staircase"] = function(args, player)
 	local thrp = target.Character:FindFirstChild("HumanoidRootPart")
 	if not thrp then return end
 
-	-- step sizes (customizable)
-	local stepSize = tonumber(args[3]) or 5       -- forward spacing
-	local stepHeight = tonumber(args[4]) or 3     -- vertical rise per bot
+	local stepSize = tonumber(args[3]) or 5
+	local stepHeight = tonumber(args[4]) or 3
 
-	-- Determine bot order using their UserId (sorted for consistency)
-	local bots = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		if table.find(allowed, p.UserId) or table.find(allowed, p.Name) then
-			table.insert(bots, p)
+	local playerPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and 
+		player.Character.HumanoidRootPart.Position
+	if not playerPos then return end
+
+	-- Create table of bots with their distances from the player
+	local botsWithDistances = {}
+	for _, bot in pairs(cmds._knownBots) do
+		if bot.Character and bot.Character:FindFirstChild("HumanoidRootPart") then
+			local bhrp = bot.Character.HumanoidRootPart
+			local distance = (playerPos - bhrp.Position).Magnitude
+			table.insert(botsWithDistances, {
+				bot = bot,
+				distance = distance
+			})
 		end
 	end
-	table.sort(bots, function(a,b) return a.UserId < b.UserId end)
 
-	-- Place each bot
-	for index, bot in ipairs(bots) do
+	table.sort(botsWithDistances, function(a, b)
+		return a.distance < b.distance
+	end)
+
+	-- Extract just the bots in order
+	local orderedBots = {}
+	for _, data in ipairs(botsWithDistances) do
+		table.insert(orderedBots, data.bot)
+	end
+
+	-- Place each bot in staircase formation
+	for index, bot in ipairs(orderedBots) do
 		if bot.Character then
 			local bhrp = bot.Character:FindFirstChild("HumanoidRootPart")
+			local head = bot.Character:FindFirstChild("Head")
+			bot.Character.Humanoid.PlatformStand = true
 			if bhrp then
-				local offsetForward = thrp.CFrame.LookVector * (stepSize * (index-1))
-				local offsetUp = Vector3.new(0, stepHeight * (index-1), 0)
+				head.Anchored = false
+				bhrp.Anchored = false
+
+				local offsetForward = thrp.CFrame.LookVector * (stepSize * (index - 1))
+				local offsetUp = Vector3.new(0, stepHeight * (index - 1), 0)
 				local pos = thrp.Position + offsetForward + offsetUp
-				bhrp.CFrame = CFrame.new(pos, thrp.Position) -- face toward target
+
+				-- Make them face downwards
+				local downCFrame = CFrame.lookAt(pos, pos - Vector3.yAxis)
+				print(downCFrame)
+
+				if index == 1 then
+					--local grav = workspace.Gravity
+					--workspace.Gravity = 0
+					--bhrp.CFrame = downCFrame
+					--task.wait(0.1)
+					--if head then head.Anchored = true else bhrp.Anchored = true end
+					bhrp.Anchored = true
+					--bhrp.Velocity = Vector3.new(0,0,0)
+					--workspace.Gravity = grav
+
+				else
+					bhrp.Anchored = false
+					bhrp.CFrame = downCFrame
+					--[[local grav = workspace.Gravity
+					workspace.Gravity = 0
+					task.wait(0.1)
+					bhrp.CFrame = downCFrame
+					bhrp.Velocity = Vector3.new(0,0,0)
+					--if head then head.Anchored = true else bhrp.Anchored = true end
+					bhrp.Anchored = true
+					workspace.Gravity = grav]]
+					cmds.falseanchor(bot,downCFrame)
+				end
 			end
 		end
 	end
 end
 
+-- Store multiple connections per bot
+local falseAnchorConns = {}
+local platform = Instance.new("Part")
+platform.Anchored = true 
+platform.Size = Vector3.new(10, 0.5, 10)
+platform.Position = Vector3.new(999,999,999)
+--platform.Parent = workspace.CurrentCamera
+
+-- falseanchor for any bot
+function cmds.falseanchor(bot, targetCFrame)
+	if not bot.Character then return end
+	local hrp = bot.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	-- Kill old loop for this bot
+	if falseAnchorConns[bot] then
+		falseAnchorConns[bot]:Disconnect()
+		falseAnchorConns[bot] = nil
+	end
+
+	-- Start RenderStepped loop
+	falseAnchorConns[bot] = RunService.Heartbeat:Connect(function()
+		if not bot.Character or not bot.Character:FindFirstChild("HumanoidRootPart") then
+			falseAnchorConns[bot]:Disconnect()
+			falseAnchorConns[bot] = nil
+			return
+		end
+
+		local bhrp = bot.Character.HumanoidRootPart
+		bhrp.Velocity = Vector3.zero
+		bhrp.AssemblyAngularVelocity = Vector3.zero
+		bhrp.CFrame = targetCFrame
+		bhrp.Anchored = false
+
+		-- Optional helper platform
+		if bot == me then
+			platform.Position = targetCFrame.Position - Vector3.new(0, -2, 0)
+		end
+	end)
+end
+
+-- stop falseanchor for a bot
+function cmds.stopfalseanchor(bot)
+	if falseAnchorConns[bot] then
+		falseAnchorConns[bot]:Disconnect()
+		falseAnchorConns[bot] = nil
+	end
+end
+
+
+
+-- Auto staircase: rebuild when player reaches last step
+cmds["autostaircase"] = function(args, player)
+	local player = player
+	if args[2] then
+		local plr = findplr(args[2])
+		if plr then
+			player = plr
+		end
+	end
+
+	-- stop old loop
+	if cmds._autoStairConn then
+		cmds._autoStairConn:Disconnect()
+		cmds._autoStairConn = nil
+	end
+
+	local distanceThreshold = tonumber(args[3]) or 5
+	local stepSize = tonumber(args[4]) or 5
+	local stepHeight = tonumber(args[5]) or 3
+
+	-- wrapper that builds and also records the new "last bot"
+	local function buildStaircase()
+		cmds["staircase"]({nil, player.Name, stepSize, stepHeight}, player)
+
+		-- after building, find the actual last bot (furthest step)
+		local furthestBot, maxHeight = nil, -math.huge
+		for _, bot in pairs(cmds._knownBots) do
+			if bot.Character and bot.Character:FindFirstChild("HumanoidRootPart") then
+				local y = bot.Character.HumanoidRootPart.Position.Y
+				if y > maxHeight then
+					furthestBot = bot
+					maxHeight = y
+				end
+			end
+		end
+		cmds._lastStairBot = furthestBot
+	end
+
+	-- build initial staircase
+	buildStaircase()
+
+	cmds._autoStairConn = RunService.Heartbeat:Connect(function()
+		local lastBot = cmds._lastStairBot
+		local lastHRP = lastBot and lastBot.Character and lastBot.Character:FindFirstChild("HumanoidRootPart")
+		local playerHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+
+		if lastHRP and playerHRP then
+			local dist = (playerHRP.Position - lastHRP.Position).Magnitude
+			if dist <= distanceThreshold then
+				task.wait(.4)
+				buildStaircase()
+			end
+		end
+	end)
+end
+
+cmds['unstaircase'] = function(args,player)
+	if cmds._autoStairConn then
+		cmds._autoStairConn:Disconnect()
+		cmds._autoStairConn = nil
+	end
+	cmds.platform(args,player)
+	cmds.unanchor(args,player)
+	for i,v in pairs(cmds._knownBots) do 
+		cmds.stopfalseanchor(v)
+	end 
+end
+
+
+cmds['unanchor'] = function(args,player)
+
+	local target = me
+	if args[2] then
+		local plr = findplr(args[2])
+		if plr then
+			target = plr
+		end
+	end
+	for i,v in pairs(target.Character:GetDescendants()) do 
+		pcall(function()
+			v.Anchored = false
+		end)
+	end
+
+end
+
+cmds['platform'] = function(args,player)
+
+	local target = me
+	if args[2] then
+		local plr = findplr(args[2])
+		if plr then
+			target = plr
+		end
+	end
+
+	pcall(function()
+		target.Character.Humanoid.PlatformStand = not target.Character.Humanoid.PlatformStand
+	end)
+
+
+end
 
 ----------------------------------------------------------------
 -- IDENTIFY COMMAND
@@ -1142,31 +1353,31 @@ cmds["identify"] = function(args, player)
 	local connection
 
 	--if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-		connection = TextChatService.MessageReceived:Connect(function(message)
-			local txt = tostring(message.Text)
-			if txt == keyword then
-				local plr = Players:GetPlayerByUserId(message.TextSource.UserId)
-				if plr then
-					responses[plr.UserId] = plr
-					print("Identify: bot detected ->", plr.Name)
-				end
+	connection = TextChatService.MessageReceived:Connect(function(message)
+		local txt = tostring(message.Text)
+		if txt == keyword then
+			local plr = Players:GetPlayerByUserId(message.TextSource.UserId)
+			if plr then
+				responses[plr.UserId] = plr
+				print("Identify: bot detected ->", plr.Name)
 			end
-		end)
+		end
+	end)
 	--else
-		local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-		if chatEvents then
+	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if chatEvents then
 		local onNewMessage = chatEvents:FindFirstChild("OnNewMessage")
 		local onNewMessage2 = chatEvents:FindFirstChild("OnMessageDoneFiltering")
-			if onNewMessage then
-				connection = onNewMessage.OnClientEvent:Connect(function(messageData)
-					if messageData.Message == keyword then
-						local plr = Players:FindFirstChild(messageData.FromSpeaker)
-						if plr then
-							responses[plr.UserId] = plr
-							print("Identify: bot detected ->", plr.Name)
-						end
+		if onNewMessage then
+			connection = onNewMessage.OnClientEvent:Connect(function(messageData)
+				if messageData.Message == keyword then
+					local plr = Players:FindFirstChild(messageData.FromSpeaker)
+					if plr then
+						responses[plr.UserId] = plr
+						print("Identify: bot detected ->", plr.Name)
 					end
-				end)
+				end
+			end)
 		end
 		if onNewMessage2 then
 			connection = onNewMessage.OnClientEvent:Connect(function(messageData)
@@ -1179,7 +1390,7 @@ cmds["identify"] = function(args, player)
 				end
 			end)
 		end
-		end
+	end
 	--end
 
 	-- Step 3: finalize after timeout
