@@ -9,8 +9,8 @@ local cmds = {}
 local me = Players.LocalPlayer
 
 -- Permissions
-local allowedNames = {"RoTTBloxs"}
-local allowedUserIds = {-1, -2}
+local allowedNames = {"RoTTBloxs","autmnpro2"}
+local allowedUserIds = {-1, -2, me.UserId}
 
 -- Utility: find player (exact > partial)
 local function findplr(str)
@@ -548,9 +548,82 @@ cmds['clear_ram'] = function(args,player)
 			end)
 		end
 	end
-	me.Character.HumanoidRootPart.Anchored = true
-	workspace.Gravity = 0
-	--maybe do UI as well
+	--me.Character.HumanoidRootPart.Anchored = true
+	--workspace.Gravity = 0
+	me.Character.Head.Anchored = true
+	
+	if args[3] == "true" then
+		me.PlayerGui:ClearAllChildren()
+	end
+	--maybe delete terrain as well
+end
+
+local wandering = false
+local wanderConn
+
+cmds["wander"] = function(args, player)
+	if wandering then return end
+	wandering = true
+
+	local char = player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local hrp = char.HumanoidRootPart
+	if not hum then return end
+
+	-- Main wandering loop
+	wanderConn = RunService.Heartbeat:Connect(function()
+		if not wandering or not char.Parent then
+			wandering = false
+			if wanderConn then
+				wanderConn:Disconnect()
+				wanderConn = nil
+			end
+			return
+		end
+
+		-- If humanoid is idle or finished, pick a new random goal
+		if hum.MoveToFinished:Wait(0) then
+			local offset = Vector3.new(
+				math.random(-40, 40),
+				0,
+				math.random(-40, 40)
+			)
+			local goal = hrp.Position + offset
+
+			local path = PathfindingService:CreatePath({
+				AgentRadius = 2,
+				AgentHeight = 5,
+				AgentCanJump = true,
+				AgentJumpHeight = 10,
+				AgentMaxSlope = 45
+			})
+
+			path:ComputeAsync(hrp.Position, goal)
+			if path.Status == Enum.PathStatus.Complete then
+				for _, waypoint in ipairs(path:GetWaypoints()) do
+					if not wandering then break end
+					hum:MoveTo(waypoint.Position)
+					hum.MoveToFinished:Wait()
+					if waypoint.Action == Enum.PathWaypointAction.Jump then
+						hum.Jump = true
+					end
+				end
+			end
+
+			-- wait 1–3s before picking a new random goal
+			task.wait(math.random(1, 3))
+		end
+	end)
+end
+
+cmds["stopwander"] = function(args, player)
+	wandering = false
+	if wanderConn then
+		wanderConn:Disconnect()
+		wanderConn = nil
+	end
 end
 
 -- Movement recording and playback system
@@ -946,10 +1019,10 @@ end
 
 -- Follow (using MoveTo instead of CFrame teleport)
 cmds["follow"] = function(args, player)
-	if args[3] then
+	--[[if args[3] then
 		local plr3 = findplr(args[3])
 		if not (plr3 and plr3.Name == me.Name) then return end
-	end
+	end]]
 
 	local target = getTargetFromArgs(args, player)
 	if not target then return end
@@ -968,11 +1041,81 @@ cmds["follow"] = function(args, player)
 		local humanoid = char:FindFirstChildOfClass("Humanoid")
 		if not (hrp and targetHRP and humanoid) then return end
 
-		local distance = tonumber(args[4]) or -3
+		local distance = tonumber(args[3]) or -3
 		local followPos = targetHRP.CFrame + targetHRP.CFrame.LookVector * distance
 		hrp.CFrame = followPos
 	end)
 end
+
+local activeLoops = {}
+
+cmds["loop"] = function(args, player)
+	if #args < 3 then
+		return -- not enough arguments: loop <interval> <id> <command> [args...]
+	end
+
+	local interval = tonumber(args[2])
+	local loopId = args[3]
+	local commandName = args[4]
+	local commandArgs = {}
+	print(interval,loopId,commandName)
+
+	-- Collect remaining args for the target command
+	for i = 5, #args do
+		table.insert(commandArgs, args[i])
+	end
+
+	if not interval or interval <= 0 then
+		return -- invalid interval
+	end
+
+	-- If a loop with same ID already exists, stop it first
+	if activeLoops[loopId] then
+		activeLoops[loopId]:Disconnect()
+		activeLoops[loopId] = nil
+	end
+
+	-- Create a loop using RunService or task.spawn
+	local RunService = game:GetService("RunService")
+	local connection
+	connection = RunService.Heartbeat:Connect(function(dt)
+		if not activeLoops[loopId] then
+			connection:Disconnect()
+			return
+		end
+
+		-- Timing control
+		activeLoops[loopId].elapsed = activeLoops[loopId].elapsed + dt
+		if activeLoops[loopId].elapsed >= interval then
+			activeLoops[loopId].elapsed = 0
+
+			-- Call the target command
+			local func = cmds[commandName]
+			print(func,commandArgs)
+			if func then
+				func(commandArgs, player)
+			end
+		end
+	end)
+
+	-- Store loop info
+	activeLoops[loopId] = {
+		connection = connection,
+		elapsed = 0
+	}
+end
+
+cmds["unloop"] = function(args, player)
+	if not args[1] then
+		return -- no ID provided
+	end
+	local loopId = args[2]
+	if activeLoops[loopId] then
+		activeLoops[loopId].connection:Disconnect()
+		activeLoops[loopId] = nil
+	end
+end
+
 
 cmds["unfollow"] = function(args, player)
 	if cmds._followConnection then
